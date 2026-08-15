@@ -1,5 +1,4 @@
 # PICO CPU Emulator - Build Configuration
-# Layer 0 + Layer 1
 
 CC      := gcc
 CFLAGS  := -Wall -Wextra -std=c99 -pedantic -O2 -I./include -MMD -MP
@@ -13,7 +12,9 @@ BUILD_DIR   := build
 CORE_SOURCES := $(SRC_DIR)/validation.c \
                 $(SRC_DIR)/memory.c \
                 $(SRC_DIR)/state.c \
-                $(SRC_DIR)/decoder.c
+                $(SRC_DIR)/decoder.c \
+                $(SRC_DIR)/alu.c \
+                $(SRC_DIR)/execute.c
 
 CORE_OBJECTS := $(CORE_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 TEST0_OBJ    := $(BUILD_DIR)/test.o
