@@ -106,11 +106,10 @@ struct CPU_State {
 
 **Header Files:**
 - `include/decoder.h`: Opcode definitions
-- `include/execute.h`: Dispatcher definitions
+
 
 **Source Files:**
 - `src/decoder.c`: Instruction decoder logic
-- `src/execute.c`: Dispatcher logic
 
 **Bit-Pattern Opcode Map:**
 ```
@@ -189,9 +188,11 @@ and the trailing `0xD9-0xFF` range are illegal opcodes:
 
 **Header Files:**
 - `include/alu.h`: ALU interface definition
-
+- `include/execute.h`: Dispatcher definitions
+  
 **Source Files:**
 - `src/alu.c`: ALU execution logic
+- `src/execute.c`: Dispatcher logic
 
 **ALU Core Function:**
 
@@ -244,7 +245,7 @@ and the trailing `0xD9-0xFF` range are illegal opcodes:
 * `void handle_inc_reg(struct CPU_State* cpu, byte reg_index)`
 * `void handle_dec_reg(struct CPU_State* cpu, byte reg_index)`
 
-### Layer 4: Host Interface & Testing Framework
+### Layer 4: Host Interface & Testing Framework (TODO)
 
 **Initialization & Execution:**
 
@@ -281,7 +282,7 @@ and the trailing `0xD9-0xFF` range are illegal opcodes:
 * `void report_pc_mismatch(address actual, address expected)`
 * `void report_memory_mismatch(address addr, byte actual, byte expected)`
 
-### Re-ordered Sequential Implementation Order
+### Re-ordered Sequential Implementation Order (TODO)
 
 1. **Phase 1: Foundation & RAM**
 * Define type aliases, constants, and flag bitmasks.
