@@ -5,8 +5,10 @@
 #include "../include/memory.h"
 #include "../include/types.h"
 #include "../include/decoder.h"
+#include "../include/alu.h"
 
-/* Layer 1 Test Suite */
+// Unit testers
+
 
 void test_memory_read_write(void) {
     struct CPU_State* cpu = cpu_create();
@@ -24,7 +26,7 @@ void test_memory_read_write(void) {
     assert(mem_read(cpu, 0x1234) == 0xEF);
 
     cpu_destroy(cpu);
-    printf("test_memory_read_write: PASSED\n");
+    printf("[1/8] Testing memory read write...\n");
 }
 
 void test_memory_word_operations(void) {
@@ -45,7 +47,7 @@ void test_memory_word_operations(void) {
     assert(mem_read(cpu, 0x1001) == 0x56);
 
     cpu_destroy(cpu);
-    printf("test_memory_word_operations: PASSED\n");
+    printf("[2/8] Testing memory word operations...\n");
 }
 
 void test_stack_operations(void) {
@@ -80,7 +82,7 @@ void test_stack_operations(void) {
     assert(cpu->sp == 0xFF);
 
     cpu_destroy(cpu);
-    printf("test_stack_operations: PASSED\n");
+    printf("[3/8] Testing stack operations...\n");
 }
 
 void test_stack_word_operations(void) {
@@ -104,7 +106,7 @@ void test_stack_word_operations(void) {
     assert(cpu->sp == 0xFF);
 
     cpu_destroy(cpu);
-    printf("test_stack_word_operations: PASSED\n");
+    printf("[4/8] Testing stack word operations...\n");
 }
 
 void test_memory_reset(void) {
@@ -124,7 +126,7 @@ void test_memory_reset(void) {
     assert(mem_read(cpu, 0xFFFF) == 0x00);
 
     cpu_destroy(cpu);
-    printf("test_memory_reset: PASSED\n");
+    printf("[5/8] Testing memory reset...\n");
 }
 
 void test_state_management(void) {
@@ -172,7 +174,7 @@ void test_state_management(void) {
     }
 
     cpu_destroy(cpu);
-    printf("test_state_management: PASSED\n");
+    printf("[6/8] Testing state management...\n");
 }
 
 void test_hard_reset(void) {
@@ -196,7 +198,7 @@ void test_hard_reset(void) {
     assert(cpu->cycles == 0);
 
     cpu_destroy(cpu);
-    printf("test_hard_reset: PASSED\n");
+    printf("[7/8] Testing hard reset...\n");
 }
 
 void test_multiple_cpu_instances(void) {
@@ -228,26 +230,12 @@ void test_multiple_cpu_instances(void) {
 
     cpu_destroy(cpu1);
     cpu_destroy(cpu2);
-    printf("test_multiple_cpu_instances: PASSED\n");
+    printf("[8/8] Testing multiple cpu instances...\n");
 }
 
-/*
-    int main(void) {
-        test_memory_read_write();
-        test_memory_word_operations();
-        test_stack_operations();
-        test_stack_word_operations();
-        test_memory_reset();
-        test_state_management();
-        test_hard_reset();
-        test_multiple_cpu_instances();
-        return 0;
-    }
-*/
-
-//####################
-
-
+// Helper macros to check flags
+//#define CHECK_FLAG(flags, bit) (((flags) & (1 << (bit))) != 0)
+#define CHECK_FLAG(flags, mask) (((flags) & (mask)) != 0)
 
 // Test Helper: Load single opcode into memory and verify decoder response
 static void test_single_opcode(struct CPU_State* cpu, address pc_start, opcode op, int expected_valid) {
@@ -362,9 +350,322 @@ static void test_halted_cpu_guard(struct CPU_State* cpu) {
     assert(cpu->pc == 0x0000); // PC must not advance when halted
 }
 
+
+static void test_add_flags(void) {
+    printf("[1/4] Testing ADD flag boundary conditions...\n");
+    byte flags = 0;
+    byte res;
+
+    // 1. Zero Flag Test: 0 + 0 = 0
+    flags = 0;
+    res = alu_execute(0x00, 0x00, 0x70, &flags);
+    assert(res == 0x00);
+    assert(CHECK_FLAG(flags, FLAG_Z));
+    assert(!CHECK_FLAG(flags, FLAG_C));
+    assert(!CHECK_FLAG(flags, FLAG_S));
+    assert(!CHECK_FLAG(flags, FLAG_O));
+
+    // 2. Carry Flag Test: 0xFF + 0x01 = 0x00 (Overflows byte, sets Carry + Zero)
+    flags = 0;
+    res = alu_execute(0xFF, 0x01, 0x70, &flags);
+    assert(res == 0x00);
+    assert(CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C));
+    assert(!CHECK_FLAG(flags, FLAG_S));
+    assert(!CHECK_FLAG(flags, FLAG_O));
+
+    // 3. Sign Flag Test: 0x40 + 0x40 = 0x80 (-128 in signed 8-bit)
+    flags = 0;
+    res = alu_execute(0x40, 0x40, 0x70, &flags);
+    assert(res == 0x80);
+    assert(!CHECK_FLAG(flags, FLAG_Z));
+    assert(!CHECK_FLAG(flags, FLAG_C));
+    assert(CHECK_FLAG(flags, FLAG_S));
+    assert(CHECK_FLAG(flags, FLAG_O)); // Positive + Positive = Negative -> Overflow!
+
+    // 4. Signed Overflow (Negative + Negative = Positive): 0x80 (-128) + 0x80 (-128) = 0x00
+    flags = 0;
+    res = alu_execute(0x80, 0x80, 0x70, &flags);
+    assert(res == 0x00);
+    assert(CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C));
+    assert(!CHECK_FLAG(flags, FLAG_S));
+    assert(CHECK_FLAG(flags, FLAG_O)); // Negative + Negative = Positive -> Overflow!
+}
+
+static void test_sub_flags(void) {
+    printf("[2/4] Testing SUB / CMP flag boundary conditions...\n");
+    byte flags = 0;
+    byte res;
+
+    // 1. Equal values: 0x50 - 0x50 = 0x00
+    flags = 0;
+    res = alu_execute(0x50, 0x50, 0x80, &flags);
+    assert(res == 0x00);
+    assert(CHECK_FLAG(flags, FLAG_Z));
+    assert(!CHECK_FLAG(flags, FLAG_C));
+    assert(!CHECK_FLAG(flags, FLAG_S));
+    assert(!CHECK_FLAG(flags, FLAG_O));
+
+    // 2. Borrow / Carry Flag: 0x00 - 0x01 = 0xFF (-1)
+    flags = 0;
+    res = alu_execute(0x00, 0x01, 0x80, &flags);
+    assert(res == 0xFF);
+    assert(!CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C)); // Borrow required
+    assert(CHECK_FLAG(flags, FLAG_S)); // Result has bit 7 set
+    assert(!CHECK_FLAG(flags, FLAG_O));
+
+    // 3. Signed Overflow: Positive - Negative = Negative (0x7F [127] - 0xFF [-1] = 0x80 [-128])
+    flags = 0;
+    res = alu_execute(0x7F, 0xFF, 0x80, &flags);
+    assert(res == 0x80);
+    assert(!CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C)); // 0x7F < 0xFF unsigned
+    assert(CHECK_FLAG(flags, FLAG_S));
+    assert(CHECK_FLAG(flags, FLAG_O)); // Pos - Neg resulted in Neg -> Overflow!
+
+    // 4. CMP immediate non-destructive flag calculation
+    flags = 0;
+    res = alu_execute(0x10, 0x20, OP_CMP_IMM, &flags);
+    assert(res == 0xF0); // 0x10 - 0x20 = 0xF0 (-16)
+    assert(CHECK_FLAG(flags, FLAG_C)); // Borrow required
+    assert(CHECK_FLAG(flags, FLAG_S)); // Negative result
+}
+
+static void test_inc_dec_flags(void) {
+    printf("[3/4] Testing INC / DEC boundary conditions...\n");
+    byte flags = 0;
+    byte res;
+
+    // INC roll-over (0xFF -> 0x00)
+    flags = 0;
+    res = alu_execute(0xFF, 0x00, 0xC0, &flags); // INC R0
+    assert(res == 0x00);
+    assert(CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C));
+
+    // DEC roll-under (0x00 -> 0xFF)
+    flags = 0;
+    res = alu_execute(0x00, 0x00, 0xC8, &flags); // DEC R0
+    assert(res == 0xFF);
+    assert(!CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C));
+    assert(CHECK_FLAG(flags, FLAG_S));
+}
+
+static void test_shift_flags(void) {
+    printf("[4/4] Testing SHL, SHR, ROL flag updates...\n");
+    byte flags = 0;
+    byte res;
+
+    // SHL 0x80 -> 0x00 with Carry
+    flags = 0;
+    res = alu_execute(0x80, 0, OP_SHL, &flags);
+    assert(res == 0x00);
+    assert(CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C));
+
+    // SHR 0x01 -> 0x00 with Carry
+    flags = 0;
+    res = alu_execute(0x01, 0, OP_SHR, &flags);
+    assert(res == 0x00);
+    assert(CHECK_FLAG(flags, FLAG_Z));
+    assert(CHECK_FLAG(flags, FLAG_C));
+
+    // ROL 0x01 with Carry set -> 0x03
+    //flags = (1 << FLAG_C); (wrong)
+    flags = FLAG_C;
+    res = alu_execute(0x01, 0, OP_ROL, &flags);
+    assert(res == 0x03);
+    assert(!CHECK_FLAG(flags, FLAG_C)); // High bit of 0x01 was 0
+}
+
+// Group 4 (execute): Phase 3 + Phase 4 instruction execution tests
+
+// Helper: write one opcode + operand bytes at addr, return addr past them.
+static address load_bytes(struct CPU_State* cpu, address addr, const byte* bytes, int count) {
+    for (int i = 0; i < count; i++) {
+        mem_write(cpu, (address)(addr + i), bytes[i]);
+    }
+    return (address)(addr + count);
+}
+
+// Helper: run exactly one fetch-decode-execute cycle from cpu->pc.
+static void step_once(struct CPU_State* cpu) {
+    opcode op = decode_instruction(cpu);
+    execute_instruction(cpu, op);
+}
+
+static void test_mov_execute(void) {
+    printf("[1/4] Testing MOV imm / MOV reg,reg execution...\n");
+    struct CPU_State* cpu = cpu_create();
+    assert(cpu != NULL);
+    cpu_reset(cpu);
+
+    // MOV R0, 0x42   (0x10 | reg=0)
+    // MOV R1, R0     (0x20 + (1<<3 | 0) = 0x28)
+    byte prog[] = { 0x10, 0x42, 0x28 };
+    cpu->pc = 0x0200;
+    load_bytes(cpu, 0x0200, prog, 3);
+
+    step_once(cpu); // MOV R0, 0x42
+    assert(cpu->regs[0] == 0x42);
+    assert(cpu->pc == 0x0202);
+
+    step_once(cpu); // MOV R1, R0
+    assert(cpu->regs[1] == 0x42);
+    assert(cpu->pc == 0x0203);
+
+    cpu_destroy(cpu);
+}
+
+static void test_add_sub_execute(void) {
+    printf("[2/4] Testing ADD/SUB imm and reg execution...\n");
+    struct CPU_State* cpu = cpu_create();
+    assert(cpu != NULL);
+    cpu_reset(cpu);
+
+    // MOV R0, 0x05        (0x10, 0x05)
+    // ADD acc, 0x10        (OP_ADD_IMM=0x78, 0x10)   -> acc = 0x10
+    // ADD acc, R0           (0x70 | reg=0)             -> acc = 0x15
+    // SUB acc, 0x05         (OP_SUB_IMM=0x88, 0x05)   -> acc = 0x10
+    // SUB acc, R0           (0x80 | reg=0)             -> acc = 0x0B
+    byte prog[] = { 0x10, 0x05, 0x78, 0x10, 0x70, 0x88, 0x05, 0x80 };
+    cpu->pc = 0x0200;
+    load_bytes(cpu, 0x0200, prog, 8);
+
+    step_once(cpu); // MOV R0, 0x05
+    assert(cpu->regs[0] == 0x05);
+
+    step_once(cpu); // ADD acc, 0x10
+    assert(cpu->acc == 0x10);
+    assert(!CHECK_FLAG(cpu->flags, FLAG_Z));
+
+    step_once(cpu); // ADD acc, R0
+    assert(cpu->acc == 0x15);
+
+    step_once(cpu); // SUB acc, 0x05
+    assert(cpu->acc == 0x10);
+
+    step_once(cpu); // SUB acc, R0
+    assert(cpu->acc == 0x0B);
+
+    cpu_destroy(cpu);
+}
+
+static void test_jump_execute(void) {
+    printf("[3/4] Testing conditional/unconditional jump execution...\n");
+    struct CPU_State* cpu = cpu_create();
+    assert(cpu != NULL);
+    cpu_reset(cpu);
+
+    // Unconditional JMP
+    // JMP 0x0300   (OP_JMP=0xD0, low=0x00, high=0x03)
+    {
+        byte prog[] = { 0xD0, 0x00, 0x03 };
+        cpu->pc = 0x0200;
+        load_bytes(cpu, 0x0200, prog, 3);
+        step_once(cpu);
+        assert(cpu->pc == 0x0300);
+    }
+
+    // JZ taken (FLAG_Z set)
+    {
+        byte prog[] = { 0xD1, 0x00, 0x04 }; // JZ 0x0400
+        cpu->pc = 0x0210;
+        load_bytes(cpu, 0x0210, prog, 3);
+        cpu->flags = FLAG_Z;
+        step_once(cpu);
+        assert(cpu->pc == 0x0400);
+    }
+
+    // JZ not taken (FLAG_Z clear) -> falls through to just past operand
+    {
+        byte prog[] = { 0xD1, 0x00, 0x04 }; // JZ 0x0400
+        cpu->pc = 0x0220;
+        load_bytes(cpu, 0x0220, prog, 3);
+        cpu->flags = 0;
+        step_once(cpu);
+        assert(cpu->pc == 0x0223); // did NOT jump; pc past the 3-byte instruction
+    }
+
+    // JNZ / JC / JNC / JS / JNS spot checks
+    {
+        byte prog[] = { 0xD2, 0x00, 0x05 }; // JNZ 0x0500
+        cpu->pc = 0x0230;
+        load_bytes(cpu, 0x0230, prog, 3);
+        cpu->flags = 0; // Z clear -> JNZ taken
+        step_once(cpu);
+        assert(cpu->pc == 0x0500);
+    }
+    {
+        byte prog[] = { 0xD3, 0x00, 0x06 }; // JC 0x0600
+        cpu->pc = 0x0240;
+        load_bytes(cpu, 0x0240, prog, 3);
+        cpu->flags = FLAG_C;
+        step_once(cpu);
+        assert(cpu->pc == 0x0600);
+    }
+    {
+        byte prog[] = { 0xD4, 0x00, 0x07 }; // JNC 0x0700
+        cpu->pc = 0x0250;
+        load_bytes(cpu, 0x0250, prog, 3);
+        cpu->flags = 0;
+        step_once(cpu);
+        assert(cpu->pc == 0x0700);
+    }
+    {
+        byte prog[] = { 0xD5, 0x00, 0x08 }; // JS 0x0800
+        cpu->pc = 0x0260;
+        load_bytes(cpu, 0x0260, prog, 3);
+        cpu->flags = FLAG_S;
+        step_once(cpu);
+        assert(cpu->pc == 0x0800);
+    }
+    {
+        byte prog[] = { 0xD6, 0x00, 0x09 }; // JNS 0x0900
+        cpu->pc = 0x0270;
+        load_bytes(cpu, 0x0270, prog, 3);
+        cpu->flags = 0;
+        step_once(cpu);
+        assert(cpu->pc == 0x0900);
+    }
+
+    cpu_destroy(cpu);
+}
+
+static void test_call_ret_execute(void) {
+    printf("[4/4] Testing CALL/RET stack integrity...\n");
+    struct CPU_State* cpu = cpu_create();
+    assert(cpu != NULL);
+    cpu_reset(cpu);
+
+    uint8_t sp_before = cpu->sp;
+
+    // At 0x0200: CALL 0x0300
+    // At 0x0300: RET
+    byte call_instr[] = { 0xD7, 0x00, 0x03 }; // CALL 0x0300
+    byte ret_instr[]  = { 0x02 };             // RET
+
+    cpu->pc = 0x0200;
+    load_bytes(cpu, 0x0200, call_instr, 3);
+    load_bytes(cpu, 0x0300, ret_instr, 1);
+
+    step_once(cpu); // CALL 0x0300
+    assert(cpu->pc == 0x0300);
+    assert(cpu->sp != sp_before); // stack pointer moved (return addr pushed)
+
+    step_once(cpu); // RET
+    assert(cpu->pc == 0x0203); // back to instruction right after the 3-byte CALL
+    assert(cpu->sp == sp_before); // stack balanced after matching RET
+
+    cpu_destroy(cpu);
+}
+
 int main(void) {
 
-    printf("Group 1:\n");
+    printf("Group 1 (basic operations):\n");
 
     test_memory_read_write();
     test_memory_word_operations();
@@ -375,7 +676,7 @@ int main(void) {
     test_hard_reset();
     test_multiple_cpu_instances();
 
-    printf("Group 2:\n");
+    printf("Group 2 (decoder):\n");
 
     struct CPU_State* cpu = cpu_create();
     assert(cpu != NULL);
@@ -386,5 +687,18 @@ int main(void) {
     test_halted_cpu_guard(cpu);
 
     cpu_destroy(cpu);
+
+    printf("Group 3 (alu):\n");
+    test_add_flags();
+    test_sub_flags();
+    test_inc_dec_flags();
+    test_shift_flags();
+
+    printf("Group 4 (execute):\n");
+    test_mov_execute();
+    test_add_sub_execute();
+    test_jump_execute();
+    test_call_ret_execute();
+
     return 0;
 }
