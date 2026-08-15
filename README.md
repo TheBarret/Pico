@@ -106,9 +106,11 @@ struct CPU_State {
 
 **Header Files:**
 - `include/decoder.h`: Opcode definitions
+- `include/execute.h`: Dispatcher definitions
 
 **Source Files:**
 - `src/decoder.c`: Instruction decoder logic
+- `src/execute.c`: Dispatcher logic
 
 **Bit-Pattern Opcode Map:**
 ```
@@ -184,6 +186,12 @@ and the trailing `0xD9-0xFF` range are illegal opcodes:
 * `int is_immediate_op(opcode op)`
 
 ### Layer 3: Instruction Execution & Bitwise Flag Calculations
+
+**Header Files:**
+- `include/alu.h`: ALU interface definition
+
+**Source Files:**
+- `src/alu.c`: ALU execution logic
 
 **ALU Core Function:**
 
