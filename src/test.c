@@ -6,6 +6,7 @@
 #include "../include/types.h"
 #include "../include/decoder.h"
 #include "../include/alu.h"
+#include "../include/execute.h"
 
 // Unit testers
 
@@ -663,6 +664,215 @@ static void test_call_ret_execute(void) {
     cpu_destroy(cpu);
 }
 
+// Bit Shifting tests
+
+static void test_shift_execute(void) {
+    struct CPU_State* cpu = cpu_create();
+    assert(cpu != NULL);
+    cpu_reset(cpu);
+
+    // SHL: acc=0x81 -> 0x02, carry set (bit 7 was 1)
+    printf("[1/3] Testing SHL execution...\n");
+    cpu->acc = 0x81;
+    cpu->flags = 0;
+    byte prog1[] = { OP_SHL };
+    cpu->pc = 0x0200;
+    load_bytes(cpu, 0x0200, prog1, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0x02);
+    assert(CHECK_FLAG(cpu->flags, FLAG_C));
+
+    // SHR: acc=0x03 -> 0x01, carry set (bit 0 was 1)
+    printf("[2/3] Testing SHR execution...\n");
+    cpu->acc = 0x03;
+    cpu->flags = 0;
+    byte prog2[] = { OP_SHR };
+    cpu->pc = 0x0210;
+    load_bytes(cpu, 0x0210, prog2, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0x01);
+    assert(CHECK_FLAG(cpu->flags, FLAG_C));
+
+    // ROL: acc=0x80 with carry-in clear -> 0x00, carry-out set (bit 7 was 1)
+    printf("[3/3] Testing ROL execution...\n");
+    cpu->acc = 0x80;
+    cpu->flags = 0;
+    byte prog3[] = { OP_ROL };
+    cpu->pc = 0x0220;
+    load_bytes(cpu, 0x0220, prog3, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0x00);
+    assert(CHECK_FLAG(cpu->flags, FLAG_C));
+    assert(CHECK_FLAG(cpu->flags, FLAG_Z));
+
+    // ROL: acc=0x01 with carry-in SET (from previous op) -> 0x03
+    byte prog4[] = { OP_ROL };
+    cpu->pc = 0x0230;
+    load_bytes(cpu, 0x0230, prog4, 1);
+    cpu->acc = 0x01;
+    // cpu->flags currently has FLAG_C set from the previous ROL result
+    step_once(cpu);
+    assert(cpu->acc == 0x03);
+
+    cpu_destroy(cpu);
+}
+
+// Mov testers
+
+static void test_mov_mem_execute(void) {
+    printf("[1/2] Testing MOV reg,[addr] execution...\n");
+    struct CPU_State* cpu = cpu_create();
+    assert(cpu != NULL);
+    cpu_reset(cpu);
+
+    // Pre-seed a data byte at 0x0500
+    mem_write(cpu, 0x0500, 0x77);
+
+    // MOV R3, [0x0500]   (0x60 | reg=3, addr_lo=0x00, addr_hi=0x05)
+    byte prog1[] = { (byte)(0x60 | 0x03), 0x00, 0x05 };
+    cpu->pc = 0x0200;
+    load_bytes(cpu, 0x0200, prog1, 3);
+    step_once(cpu);
+    assert(cpu->regs[3] == 0x77);
+    assert(cpu->pc == 0x0203);
+
+    printf("[2/2] Testing MOV [addr],reg execution...\n");
+
+    // R5 = 0x99, then MOV [0x0600], R5  (0x68 | reg=5, addr_lo=0x00, addr_hi=0x06)
+    cpu->regs[5] = 0x99;
+    byte prog2[] = { (byte)(0x68 | 0x05), 0x00, 0x06 };
+    cpu->pc = 0x0210;
+    load_bytes(cpu, 0x0210, prog2, 3);
+    step_once(cpu);
+    assert(mem_read(cpu, 0x0600) == 0x99);
+    assert(cpu->pc == 0x0213);
+
+    // Round-trip check: MOV R6,[0x0600] should now read back 0x99
+    byte prog3[] = { (byte)(0x60 | 0x06), 0x00, 0x06 };
+    cpu->pc = 0x0220;
+    load_bytes(cpu, 0x0220, prog3, 3);
+    step_once(cpu);
+    assert(cpu->regs[6] == 0x99);
+
+    cpu_destroy(cpu);
+}
+
+static void test_bitwise_compare_incdec_execute(void) {
+    struct CPU_State* cpu = cpu_create();
+    assert(cpu != NULL);
+    cpu_reset(cpu);
+
+    printf("[1/6] Testing AND/OR/XOR reg execution...\n");
+
+    // acc=0xF0, R0=0x0F -> AND -> 0x00, Z set
+    cpu->acc = 0xF0;
+    cpu->regs[0] = 0x0F;
+    byte prog1[] = { (byte)(0x90 | 0x00) }; // AND acc, R0
+    cpu->pc = 0x0200;
+    load_bytes(cpu, 0x0200, prog1, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0x00);
+    assert(CHECK_FLAG(cpu->flags, FLAG_Z));
+
+    // acc=0xF0, R1=0x0F -> OR -> 0xFF
+    cpu->acc = 0xF0;
+    cpu->regs[1] = 0x0F;
+    byte prog2[] = { (byte)(0x98 | 0x01) }; // OR acc, R1
+    cpu->pc = 0x0210;
+    load_bytes(cpu, 0x0210, prog2, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0xFF);
+
+    // acc=0xFF, R2=0xFF -> XOR -> 0x00, Z set
+    cpu->acc = 0xFF;
+    cpu->regs[2] = 0xFF;
+    byte prog3[] = { (byte)(0xA0 | 0x02) }; // XOR acc, R2
+    cpu->pc = 0x0220;
+    load_bytes(cpu, 0x0220, prog3, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0x00);
+    assert(CHECK_FLAG(cpu->flags, FLAG_Z));
+
+    printf("[2/6] Testing CMP reg non-destructive behavior...\n");
+
+    // acc=0x50, R3=0x50 -> CMP -> flags show equal (Z set), acc UNCHANGED
+    cpu->acc = 0x50;
+    cpu->regs[3] = 0x50;
+    byte prog4[] = { (byte)(0xA8 | 0x03) }; // CMP acc, R3
+    cpu->pc = 0x0230;
+    load_bytes(cpu, 0x0230, prog4, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0x50); // acc not overwritten
+    assert(CHECK_FLAG(cpu->flags, FLAG_Z));
+
+    printf("[3/6] Testing CMP imm non-destructive behavior...\n");
+
+    // acc=0x10, imm=0x20 -> CMP -> borrow set, acc UNCHANGED
+    cpu->acc = 0x10;
+    byte prog5[] = { OP_CMP_IMM, 0x20 };
+    cpu->pc = 0x0240;
+    load_bytes(cpu, 0x0240, prog5, 2);
+    step_once(cpu);
+    assert(cpu->acc == 0x10); // acc not overwritten
+    assert(CHECK_FLAG(cpu->flags, FLAG_C)); // borrow required
+
+    printf("[4/6] Testing TEST reg non-destructive behavior...\n");
+
+    // acc=0x0F, R4=0xF0 -> TEST -> result 0x00 (Z set), acc UNCHANGED
+    cpu->acc = 0x0F;
+    cpu->regs[4] = 0xF0;
+    byte prog6[] = { (byte)(0xB8 | 0x04) }; // TEST acc, R4
+    cpu->pc = 0x0250;
+    load_bytes(cpu, 0x0250, prog6, 1);
+    step_once(cpu);
+    assert(cpu->acc == 0x0F); // acc not overwritten
+    assert(CHECK_FLAG(cpu->flags, FLAG_Z));
+
+    printf("[5/6] Testing INC reg execution (incl. rollover)...\n");
+
+    // R5 = 0x05 -> INC -> 0x06
+    cpu->regs[5] = 0x05;
+    byte prog7[] = { (byte)(0xC0 | 0x05) }; // INC R5
+    cpu->pc = 0x0260;
+    load_bytes(cpu, 0x0260, prog7, 1);
+    step_once(cpu);
+    assert(cpu->regs[5] == 0x06);
+
+    // R6 = 0xFF -> INC -> 0x00, Z + C set (rollover)
+    cpu->regs[6] = 0xFF;
+    byte prog8[] = { (byte)(0xC0 | 0x06) }; // INC R6
+    cpu->pc = 0x0270;
+    load_bytes(cpu, 0x0270, prog8, 1);
+    step_once(cpu);
+    assert(cpu->regs[6] == 0x00);
+    assert(CHECK_FLAG(cpu->flags, FLAG_Z));
+    assert(CHECK_FLAG(cpu->flags, FLAG_C));
+
+    printf("[6/6] Testing DEC reg execution (incl. rollunder)...\n");
+
+    // R7 = 0x01 -> DEC -> 0x00, Z set
+    cpu->regs[7] = 0x01;
+    byte prog9[] = { (byte)(0xC8 | 0x07) }; // DEC R7
+    cpu->pc = 0x0280;
+    load_bytes(cpu, 0x0280, prog9, 1);
+    step_once(cpu);
+    assert(cpu->regs[7] == 0x00);
+    assert(CHECK_FLAG(cpu->flags, FLAG_Z));
+
+    // R0 = 0x00 -> DEC -> 0xFF, S + C set (rollunder)
+    cpu->regs[0] = 0x00;
+    byte prog10[] = { (byte)(0xC8 | 0x00) }; // DEC R0
+    cpu->pc = 0x0290;
+    load_bytes(cpu, 0x0290, prog10, 1);
+    step_once(cpu);
+    assert(cpu->regs[0] == 0xFF);
+    assert(CHECK_FLAG(cpu->flags, FLAG_S));
+    assert(CHECK_FLAG(cpu->flags, FLAG_C));
+
+    cpu_destroy(cpu);
+}
+
+
 int main(void) {
 
     printf("Group 1 (basic operations):\n");
@@ -699,6 +909,11 @@ int main(void) {
     test_add_sub_execute();
     test_jump_execute();
     test_call_ret_execute();
-
+    printf("Group 4a (bit shifting):\n");
+    test_shift_execute();
+    printf("Group 4b (data mov-ement):\n");
+    test_mov_mem_execute();
+    printf("Group 4c (bitwise, comparator, counters):\n");
+    test_bitwise_compare_incdec_execute();
     return 0;
 }
