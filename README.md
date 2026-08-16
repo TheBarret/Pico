@@ -1,6 +1,11 @@
 # PICO (8bit CPU, rev 0.3)
 
 *Tiny 8-bit CPU emulator written in C*
+
+Compile command-line:  
+```bash
+ > make all test
+```
  
 ### Layer 0: The Core Data Types & Constants
 
