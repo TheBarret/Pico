@@ -5,9 +5,6 @@
 #include "../include/memory.h"
 
 
-// SHL/SHR/ROL, memory MOV, AND/OR/XOR/CMP/TEST, INC/DEC, IRET, INT, reserved/illegal opcodes,
-// belongs to Phase 5 / Phase 7 and is intentionally not handled in this section.
-
 //  local helpers: address <-> pair conversion
 // (pair is {byte low; byte high;} per Layer 0; address is uint16_t)
 static pair addr_to_pair(address a) {
@@ -108,6 +105,68 @@ void handle_call(struct CPU_State* cpu, address target) {
 void handle_ret(struct CPU_State* cpu) {
     pair ret_addr = pop_word(cpu);
     cpu->pc = pair_to_addr(ret_addr);
+}
+
+// SHL / SHR / ROL
+
+void handle_shl(struct CPU_State* cpu) {
+    cpu->acc = alu_execute(cpu->acc, 0, OP_SHL, &cpu->flags);
+}
+
+void handle_shr(struct CPU_State* cpu) {
+    cpu->acc = alu_execute(cpu->acc, 0, OP_SHR, &cpu->flags);
+}
+
+void handle_rol(struct CPU_State* cpu) {
+    cpu->acc = alu_execute(cpu->acc, 0, OP_ROL, &cpu->flags);
+}
+
+// MOV Operations
+
+void handle_mov_mem_to_reg(struct CPU_State* cpu, byte reg_index, address addr) {
+    cpu->regs[reg_index & 0x07] = mem_read(cpu, addr);
+}
+
+void handle_mov_reg_to_mem(struct CPU_State* cpu, address addr, byte reg_index) {
+    mem_write(cpu, addr, cpu->regs[reg_index & 0x07]);
+}
+
+// Logic operations
+
+void handle_and_reg(struct CPU_State* cpu, byte reg_index) {
+    cpu->acc = alu_execute(cpu->acc, cpu->regs[reg_index & 0x07], 0x90, &cpu->flags);
+}
+
+void handle_or_reg(struct CPU_State* cpu, byte reg_index) {
+    cpu->acc = alu_execute(cpu->acc, cpu->regs[reg_index & 0x07], 0x98, &cpu->flags);
+}
+
+void handle_xor_reg(struct CPU_State* cpu, byte reg_index) {
+    cpu->acc = alu_execute(cpu->acc, cpu->regs[reg_index & 0x07], 0xA0, &cpu->flags);
+}
+
+// CMP / TEST are non-destructive: flags are updated, acc is NOT overwritten.
+void handle_cmp_reg(struct CPU_State* cpu, byte reg_index) {
+    (void)alu_execute(cpu->acc, cpu->regs[reg_index & 0x07], 0xA8, &cpu->flags);
+}
+
+void handle_cmp_imm(struct CPU_State* cpu, byte immediate) {
+    (void)alu_execute(cpu->acc, immediate, OP_CMP_IMM, &cpu->flags);
+}
+
+void handle_test_reg(struct CPU_State* cpu, byte reg_index) {
+    (void)alu_execute(cpu->acc, cpu->regs[reg_index & 0x07], 0xB8, &cpu->flags);
+}
+
+// INC/DEC operate on the register directly, not on acc.
+void handle_inc_reg(struct CPU_State* cpu, byte reg_index) {
+    byte r = reg_index & 0x07;
+    cpu->regs[r] = alu_execute(cpu->regs[r], 0, 0xC0, &cpu->flags);
+}
+
+void handle_dec_reg(struct CPU_State* cpu, byte reg_index) {
+    byte r = reg_index & 0x07;
+    cpu->regs[r] = alu_execute(cpu->regs[r], 0, 0xC8, &cpu->flags);
 }
 
 
@@ -214,5 +273,78 @@ void execute_instruction(struct CPU_State* cpu, opcode op) {
         handle_call(cpu, target);
         return;
     }
+    if (op == OP_SHL) {
+        handle_shl(cpu);
+        return;
+    }
+    if (op == OP_SHR) {
+        handle_shr(cpu);
+        return;
+    }
+    if (op == OP_ROL) {
+        handle_rol(cpu);
+        return;
+    }
+    // MOV reg, [addr] : 0x60-0x67
+    if (op >= 0x60 && op <= 0x67) {
+        byte reg_index = op & 0x07;
+        address addr = fetch_addr_operand(cpu);
+        handle_mov_mem_to_reg(cpu, reg_index, addr);
+        return;
+    }
+    // MOV [addr], reg : 0x68-0x6F
+    if (op >= 0x68 && op <= 0x6F) {
+        byte reg_index = op & 0x07;
+        address addr = fetch_addr_operand(cpu);
+        handle_mov_reg_to_mem(cpu, addr, reg_index);
+        return;
+    }
+    // --- AND acc, reg : 0x90-0x97 ---
+    if (op >= 0x90 && op <= 0x97) {
+        handle_and_reg(cpu, op & 0x07);
+        return;
+    }
 
+    // --- OR acc, reg : 0x98-0x9F ---
+    if (op >= 0x98 && op <= 0x9F) {
+        handle_or_reg(cpu, op & 0x07);
+        return;
+    }
+
+    // --- XOR acc, reg : 0xA0-0xA7 ---
+    if (op >= 0xA0 && op <= 0xA7) {
+        handle_xor_reg(cpu, op & 0x07);
+        return;
+    }
+
+    // --- CMP acc, reg : 0xA8-0xAF ---
+    if (op >= 0xA8 && op <= 0xAF) {
+        handle_cmp_reg(cpu, op & 0x07);
+        return;
+    }
+
+    // --- CMP acc, imm : 0xB0 ---
+    if (op == OP_CMP_IMM) {
+        byte value = fetch_imm_operand(cpu);
+        handle_cmp_imm(cpu, value);
+        return;
+    }
+
+    // --- TEST acc, reg : 0xB8-0xBF ---
+    if (op >= 0xB8 && op <= 0xBF) {
+        handle_test_reg(cpu, op & 0x07);
+        return;
+    }
+
+    // --- INC reg : 0xC0-0xC7 ---
+    if (op >= 0xC0 && op <= 0xC7) {
+        handle_inc_reg(cpu, op & 0x07);
+        return;
+    }
+
+    // --- DEC reg : 0xC8-0xCF ---
+    if (op >= 0xC8 && op <= 0xCF) {
+        handle_dec_reg(cpu, op & 0x07);
+        return;
+    }
 }
