@@ -28,4 +28,7 @@ void cpu_load_hex(struct CPU_State* cpu, const char* filename, address start_add
 void cpu_save_state(struct CPU_State* cpu, const char* filename);
 int cpu_load_state(struct CPU_State* cpu, const char* filename);
 
+/* Raw memory access for debug dumps (bypasses bus hooks) */
+byte mem_read_raw(struct CPU_State* cpu, address addr);
+
 #endif /* HOST_H */

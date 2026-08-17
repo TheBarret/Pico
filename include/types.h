@@ -50,4 +50,19 @@ struct CPU_State {
     unsigned long long cycles;    /* Cycle counter */
 };
 
+/* Pico Bus Control Registers */
+#define BUS_BASE        0xFE00
+#define BUS_SELECT      0xFE00
+#define BUS_TYPE        0xFE01
+#define BUS_STATUS      0xFE02
+#define BUS_COMMAND     0xFE03
+#define BUS_DATA        0xFE04
+#define BUS_INT_SOURCE  0xFE05
+
+/* BUS_STATUS values */
+#define BUS_READY       0x00
+#define BUS_BUSY        0x01
+#define BUS_ERROR       0x02
+#define BUS_ABSENT      0xFF
+
 #endif /* TYPES_H */
