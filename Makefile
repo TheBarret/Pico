@@ -1,5 +1,4 @@
-# PICO CPU Emulator - Build Configuration
-# Layer 0 + Layer 1
+# PICO8 Build script
 
 CC      := gcc
 CFLAGS  := -Wall -Wextra -std=c99 -pedantic -O2 -I./include -MMD -MP
@@ -8,8 +7,8 @@ LDFLAGS := -lm
 SRC_DIR     := src
 INCLUDE_DIR := include
 BUILD_DIR   := build
+DEV_DIR     := devices
 
-# Core Engine Source Files (excluding test harnesses containing main)
 CORE_SOURCES := $(SRC_DIR)/validation.c \
                 $(SRC_DIR)/memory.c \
                 $(SRC_DIR)/state.c \
@@ -17,21 +16,31 @@ CORE_SOURCES := $(SRC_DIR)/validation.c \
                 $(SRC_DIR)/alu.c \
                 $(SRC_DIR)/execute.c \
                 $(SRC_DIR)/host.c \
-                $(SRC_DIR)/harness.c
+                $(SRC_DIR)/harness.c \
+                $(SRC_DIR)/bus.c \
+                $(DEV_DIR)/stddev.c \
+                $(SRC_DIR)/main.c
 
-CORE_OBJECTS := $(CORE_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
-TEST0_OBJ    := $(BUILD_DIR)/test.o
+
+# Map C source files to object files in build/
+CORE_OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(notdir $(CORE_SOURCES)))
+
+# Driver object files
+TEST_OBJ := $(BUILD_DIR)/test.o
+MAIN_OBJ := $(BUILD_DIR)/main.o
 
 # Output Artifacts
 LIBRARY  := $(BUILD_DIR)/libp8.a
+MAIN_BIN := $(BUILD_DIR)/pico8
 TEST_BIN := $(BUILD_DIR)/test
 
-.PHONY: all test clean verify layer0 layer1
 
-# Default target builds static library and test binary
-all: $(BUILD_DIR) $(LIBRARY) $(TEST_BIN)
+.PHONY: all test run clean verify
 
-# Creates target build folder if missing
+# Default target builds the library, test runner, and main application binary
+all: $(BUILD_DIR) $(LIBRARY) $(TEST_BIN) $(MAIN_BIN)
+
+# Creates target build directory if missing
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
@@ -39,27 +48,33 @@ $(BUILD_DIR):
 $(LIBRARY): $(CORE_OBJECTS)
 	ar rcs $@ $^
 
-# Links the Layer 0+1 test executable
-$(TEST_BIN): $(TEST0_OBJ) $(LIBRARY)
+# Link Unit Test Binary
+$(TEST_BIN): $(TEST_OBJ) $(LIBRARY)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-# Rule to compile any C source to object file
+# Link Main Executable Binary
+$(MAIN_BIN): $(MAIN_OBJ) $(LIBRARY)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Generic rule for src/*.c files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Target to compile and run primitive layer test suite
+# Generic rule for devices/*.c files
+$(BUILD_DIR)/%.o: $(DEV_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 test: $(TEST_BIN)
-	@echo "MAKE: Running Tests..."
+	@echo "MAKE: Running Unit Tests..."
 	@./$(TEST_BIN)
 
-# Layer-specific target helpers
-layer0: $(BUILD_DIR)/validation.o
-layer1: $(BUILD_DIR)/memory.o $(BUILD_DIR)/state.o
+run: $(MAIN_BIN)
+	@echo "MAKE: Running Pico8 runtime..."
+	@./$(MAIN_BIN)
 
-# Dry-run validation check
 verify:
-	$(CC) $(CFLAGS) -fsyntax-only $(CORE_SOURCES) $(SRC_DIR)/test.c
-	@echo "Finished"
+	$(CC) $(CFLAGS) -fsyntax-only $(CORE_SOURCES) $(SRC_DIR)/test.c $(SRC_DIR)/main.c
+	@echo "Syntax verification passed."
 
 clean:
 	rm -rf $(BUILD_DIR)
