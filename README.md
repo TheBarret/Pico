@@ -335,11 +335,11 @@ See [Bus Readme](PICOBUS.md)
 
 **Header Files:**
 - `include/bus.h`: Bus controller definitions
-- `devices/stddev.h`: stdio wrapper device definitions
+- `devices/stddev.h`: Stdio wrapper device definitions
 
 **Source Files:**
 - `src/bus.c`: Bus controller logic
-- `devices/stddev.c`: stdio wrapper control logic 
+- `devices/stddev.c`: Stdio wrapper control logic 
 
 **Stdio commands recognized by BUS_COMMAND (0xFE03):**  
 ```
