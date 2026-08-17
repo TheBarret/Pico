@@ -335,10 +335,17 @@ See [Bus Readme](PICOBUS.md)
 
 **Header Files:**
 - `include/bus.h`: Bus controller definitions
+- `devices/stddev.h`: stdio wrapper device definitions
 
 **Source Files:**
 - `src/bus.c`: Bus controller logic
+- `devices/stddev.c`: stdio wrapper control logic 
 
+**Stdio commands recognized by BUS_COMMAND (0xFE03):**  
+```
+ #define STDIO_CMD_FLUSH 0x01  /* Force flush host stdout buffer */
+ #define STDIO_CMD_CLEAR 0x02  /* Clear host terminal screen    */
+```
 
 ### Re-ordered Sequential Implementation Order
 
