@@ -294,6 +294,17 @@ and the trailing `0xD9-0xFF` range are illegal opcodes:
 * `void report_pc_mismatch(address actual, address expected)`
 * `void report_memory_mismatch(address addr, byte actual, byte expected)`
 
+### Pico Bus
+
+See [Bus Readme](PICOBUS.md)
+
+**Header Files:**
+- `include/bus.h`: Bus controller definitions
+
+**Source Files:**
+- `src/bus.c`: Bus controller logic
+
+
 ### Re-ordered Sequential Implementation Order
 
 1. **Phase 1: Foundation & RAM**
